@@ -5,6 +5,8 @@ from shapely.ops import transform
 import pyproj
 import re
 import os
+import simplekml
+import tempfile
 
 app = Flask(__name__)
 
@@ -23,21 +25,6 @@ COUNTY_CONFIG = {
             "acres": "landsizeac",
             "market": "totalvalue"
         }
-    },
-    "harris": {
-        "endpoint": "https://services.arcgis.com/su8ic9KbA7PYVxPS/ArcGIS/rest/services/Harris_County_Parcels/FeatureServer/1/query",
-        "fields": {
-            "street_num": "site_str_num",
-            "street_name": "site_str_name",
-            "street_type": "site_str_sfx",
-            "owner": "owner_name_1",
-            "legal": "legal_desc",
-            "deed": "deed_ref",
-            "parcel_id": "HCAD_NUM",
-            "quickrefid": "LOWPARCELID",
-            "acres": "Acreage",
-            "market": "MKT_VAL"
-        }
     }
 }
 
@@ -53,6 +40,19 @@ def parse_address_loose(address):
         return number.strip(), name, st_type
     return None, None, None
 
+def parse_legal_description(legal):
+    subdivision = block = lot = None
+    subdivision_match = re.match(r'^(.*?)(BLOCK|LOT|RESERVE|ACRES)', legal, re.IGNORECASE)
+    if subdivision_match:
+        subdivision = subdivision_match.group(1).strip(", ").title()
+    block_match = re.search(r'BLOCK\s+(\w+)', legal, re.IGNORECASE)
+    if block_match:
+        block = block_match.group(1)
+    lot_match = re.search(r'(LOT|RESERVE)\s+["\w]+', legal, re.IGNORECASE)
+    if lot_match:
+        lot = lot_match.group(0).strip()
+    return subdivision, block, lot
+
 def query_parcels(endpoint, where_clause):
     params = {
         "where": where_clause,
@@ -64,6 +64,27 @@ def query_parcels(endpoint, where_clause):
     r = requests.get(endpoint, params=params, timeout=10)
     r.raise_for_status()
     return r.json().get("features", [])
+
+def generate_kmz(geom, metadata=None):
+    kml = simplekml.Kml()
+    poly = None
+    if geom.geom_type == "Polygon":
+        coords = [(x, y) for x, y in list(geom.exterior.coords)]
+        poly = kml.newpolygon(name="Parcel", outerboundaryis=coords)
+    elif geom.geom_type == "MultiPolygon":
+        for poly_geom in geom.geoms:
+            coords = [(x, y) for x, y in list(poly_geom.exterior.coords)]
+            poly = kml.newpolygon(name="Parcel Part", outerboundaryis=coords)
+    if poly:
+        poly.style.polystyle.fill = 0
+        poly.style.linestyle.color = simplekml.Color.red
+        poly.style.linestyle.width = 5
+        if metadata:
+            html = ''.join([f"<b>{k}:</b> {v}<br>" for k, v in metadata.items()])
+            poly.description = html
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".kmz")
+    kml.savekmz(tmp.name)
+    return tmp.name
 
 @app.route("/estimate", methods=["GET"])
 def estimate():
@@ -113,7 +134,11 @@ def estimate():
     owner = props.get(fields["owner"], "N/A")
     acres = props.get(fields["acres"], "N/A")
     market_val = props.get(fields["market"], "N/A")
+    quickrefid = props.get(fields["quickrefid"], "")
+    parcel_id = props.get(fields["parcel_id"], "")
     address_full = f"{props.get(fields['street_num'], '')} {props.get(fields['street_name'], '')} {props.get(fields['street_type'], '')}".strip()
+
+    subdivision, block, lot = parse_legal_description(legal)
 
     geom = shape(feature["geometry"])
     project = pyproj.Transformer.from_crs("EPSG:4326", CRS_TARGET, always_xy=True).transform
@@ -122,85 +147,38 @@ def estimate():
     area_ft2 = geom_proj.area
     area_acres = area_ft2 / 43560
 
+    kmz_metadata = {
+        "Owner": owner,
+        "Geo ID": parcel_id,
+        "Legal": legal,
+        "Subdivision": subdivision or "",
+        "Block": block or "",
+        "Lot/Reserve": lot or "",
+        "Deed": deed or "",
+        "Area (ac)": f"{area_acres:.2f}",
+        "Perimeter (ft)": f"{perimeter_ft:.2f}"
+    }
+
+    kmz_path = generate_kmz(geom, metadata=kmz_metadata)
+
+    with open(kmz_path, "rb") as f:
+        kmz_bytes = f.read()
+
     return jsonify({
         "owner": owner,
         "address": address_full,
         "legal_description": legal,
+        "subdivision": subdivision,
+        "block": block,
+        "lot_reserve": lot,
         "deed": deed,
         "called_acreage": acres,
         "market_value": market_val,
+        "quickrefid": quickrefid,
+        "parcel_id": parcel_id,
         "parcel_size_acres": round(area_acres, 2),
-        "perimeter_ft": round(perimeter_ft, 2)
-    })
-
-@app.route("/openapi.json")
-def openapi_spec():
-    return jsonify({
-        "openapi": "3.0.0",
-        "info": {
-            "title": "Tejas Estimator API",
-            "version": "1.0.0",
-            "description": "Retrieve parcel estimate details based on address and county."
-        },
-        "servers": [
-            { "url": "https://tejas-estimator-api.onrender.com" }
-        ],
-        "paths": {
-            "/estimate": {
-                "get": {
-                    "operationId": "get_survey_estimate",
-                    "summary": "Get survey estimate",
-                    "parameters": [
-                        {
-                            "name": "address",
-                            "in": "query",
-                            "required": False,
-                            "schema": { "type": "string" },
-                            "description": "The full address to search."
-                        },
-                        {
-                            "name": "county",
-                            "in": "query",
-                            "required": True,
-                            "schema": {
-                                "type": "string",
-                                "enum": ["fortbend", "harris"]
-                            },
-                            "description": "The county to search in."
-                        },
-                        {
-                            "name": "quickref",
-                            "in": "query",
-                            "required": False,
-                            "schema": { "type": "string" },
-                            "description": "Quick Ref ID for exact parcel lookup."
-                        }
-                    ],
-                    "responses": {
-                        "200": {
-                            "description": "Successful response",
-                            "content": {
-                                "application/json": {
-                                    "schema": {
-                                        "type": "object",
-                                        "properties": {
-                                            "owner": { "type": "string" },
-                                            "address": { "type": "string" },
-                                            "legal_description": { "type": "string" },
-                                            "deed": { "type": "string" },
-                                            "called_acreage": { "type": "string" },
-                                            "market_value": { "type": "string" },
-                                            "parcel_size_acres": { "type": "number" },
-                                            "perimeter_ft": { "type": "number" }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        "perimeter_ft": round(perimeter_ft, 2),
+        "kmz": kmz_bytes.hex()
     })
 
 if __name__ == "__main__":
