@@ -124,9 +124,6 @@ def estimate():
         "perimeter_ft": round(perimeter_ft, 2)
     })
 
-if __name__ == "__main__":
-    app.run(debug=True)
-
 @app.route("/openapi.json")
 def openapi_spec():
     return jsonify({
@@ -189,3 +186,6 @@ def openapi_spec():
             }
         }
     })
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)
