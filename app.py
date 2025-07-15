@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, redirect, url_for
 import requests
 from shapely.geometry import shape
 from shapely.ops import transform
@@ -24,6 +24,21 @@ COUNTY_CONFIG = {
             "quickrefid": "quickrefid",
             "acres": "landsizeac",
             "market": "totalvalue"
+        }
+    },
+    "harris": {
+        "endpoint": "https://services.arcgis.com/su8ic9KbA7PYVxPS/ArcGIS/rest/services/Harris_County_Parcels/FeatureServer/1/query",
+        "fields": {
+            "street_num": "site_str_num",
+            "street_name": "site_str_name",
+            "street_type": "site_str_sfx",
+            "owner": "owner_name_1",
+            "legal": "legal_desc",
+            "deed": "deed_ref",
+            "parcel_id": "HCAD_NUM",
+            "quickrefid": "LOWPARCELID",
+            "acres": "Acreage",
+            "market": "MKT_VAL"
         }
     }
 }
@@ -163,9 +178,10 @@ def estimate():
     }
 
     kmz_path = generate_kmz(geom, metadata=kmz_metadata)
-
     with open(kmz_path, "rb") as f:
         kmz_bytes = f.read()
+
+    download_kmz_url = url_for("download_kmz", address=address or "", quickref=quickref or "", county=county, _external=True)
 
     return jsonify({
         "owner": owner,
@@ -182,8 +198,20 @@ def estimate():
         "parcel_size_acres": round(area_acres, 2),
         "perimeter_ft": round(perimeter_ft, 2),
         "maps_link": maps_url,
-        "kmz": kmz_bytes.hex()
+        "kmz_download_url": download_kmz_url
     })
+
+@app.route("/download_kmz")
+def download_kmz():
+    address = request.args.get("address")
+    county = request.args.get("county", "fortbend").lower()
+    quickref = request.args.get("quickref")
+
+    temp_kmz_path = "/tmp/parcel.kmz"
+    if not os.path.exists(temp_kmz_path):
+        return "KMZ not found. Please run an estimate first.", 404
+
+    return send_file(temp_kmz_path, as_attachment=True, download_name="parcel.kmz")
 
 @app.route("/openapi.json")
 def openapi_spec():
@@ -192,7 +220,7 @@ def openapi_spec():
         "info": {
             "title": "Tejas Estimator API",
             "version": "1.0.0",
-            "description": "Retrieve parcel estimate details based on address or Quick Ref ID in Fort Bend County."
+            "description": "Retrieve parcel estimate details based on address or Quick Ref ID in Fort Bend or Harris County."
         },
         "servers": [
             { "url": "https://tejas-estimator-api.onrender.com" }
@@ -225,7 +253,7 @@ def openapi_spec():
                                 "type": "string",
                                 "enum": ["fortbend", "harris"]
                             },
-                            "description": "The county to search in."
+                            "description": "The county to search in ('fortbend' or 'harris')."
                         }
                     ],
                     "responses": {
@@ -250,7 +278,7 @@ def openapi_spec():
                                             "parcel_size_acres": { "type": "number" },
                                             "perimeter_ft": { "type": "number" },
                                             "maps_link": { "type": "string" },
-                                            "kmz": { "type": "string" }
+                                            "kmz_download_url": { "type": "string" }
                                         }
                                     }
                                 }
