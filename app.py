@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 import requests
 from shapely.geometry import shape
 from shapely.ops import transform
@@ -147,6 +147,9 @@ def estimate():
     area_ft2 = geom_proj.area
     area_acres = area_ft2 / 43560
 
+    centroid = geom.centroid
+    maps_url = f"https://www.google.com/maps/search/?api=1&query={centroid.y},{centroid.x}"
+
     kmz_metadata = {
         "Owner": owner,
         "Geo ID": parcel_id,
@@ -178,6 +181,7 @@ def estimate():
         "parcel_id": parcel_id,
         "parcel_size_acres": round(area_acres, 2),
         "perimeter_ft": round(perimeter_ft, 2),
+        "maps_link": maps_url,
         "kmz": kmz_bytes.hex()
     })
 
