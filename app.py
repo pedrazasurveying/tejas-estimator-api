@@ -118,7 +118,6 @@ def estimate():
     fields = config["fields"]
 
     matches = []
-
     if quickref:
         where_clause = f"{fields['quickrefid']} = '{quickref}'"
         matches = query_parcels(endpoint, where_clause)
@@ -126,14 +125,12 @@ def estimate():
         number, name, st_type = parse_address_loose(address)
         if not name:
             return jsonify({"error": "Invalid address format"}), 400
-
         clauses = []
         if number and st_type:
             clauses.append(f"{fields['street_num']} = '{number}' AND UPPER({fields['street_name']}) LIKE '%{name.upper()}%' AND UPPER({fields['street_type']}) = '{st_type.upper()}'")
         if number:
             clauses.append(f"{fields['street_num']} = '{number}' AND UPPER({fields['street_name']}) LIKE '%{name.upper()}%'")
         clauses.append(f"UPPER({fields['street_name']}) LIKE '%{name.upper()}%'")
-
         for clause in clauses:
             matches = query_parcels(endpoint, clause)
             if matches:
@@ -177,57 +174,26 @@ def estimate():
         "Perimeter (ft)": f"{perimeter_ft:.2f}"
     }
 
-       kmz_filename = f"parcel_{quickrefid or parcel_id or 'default'}.kmz"
-       kmz_path = os.path.join("/tmp", kmz_filename)
-       kml = simplekml.Kml()
-       poly = None
-       if geom.geom_type == "Polygon":
-           coords = [(x, y) for x, y in list(geom.exterior.coords)]
-           poly = kml.newpolygon(name="Parcel", outerboundaryis=coords)
-       elif geom.geom_type == "MultiPolygon":
-           for poly_geom in geom.geoms:
-               coords = [(x, y) for x, y in list(poly_geom.exterior.coords)]
-               poly = kml.newpolygon(name="Parcel Part", outerboundaryis=coords)
-       if poly:
-           poly.style.polystyle.fill = 0
-           poly.style.linestyle.color = simplekml.Color.red
-           poly.style.linestyle.width = 5
-           html = ''.join([f"<b>{k}:</b> {v}<br>" for k, v in kmz_metadata.items()])
-           poly.description = html
-       kml.savekmz(kmz_path)
+    kmz_filename = f"parcel_{quickrefid or parcel_id or 'default'}.kmz"
+    kmz_path = os.path.join("/tmp", kmz_filename)
+    kml = simplekml.Kml()
+    poly = None
+    if geom.geom_type == "Polygon":
+        coords = [(x, y) for x, y in list(geom.exterior.coords)]
+        poly = kml.newpolygon(name="Parcel", outerboundaryis=coords)
+    elif geom.geom_type == "MultiPolygon":
+        for poly_geom in geom.geoms:
+            coords = [(x, y) for x, y in list(poly_geom.exterior.coords)]
+            poly = kml.newpolygon(name="Parcel Part", outerboundaryis=coords)
+    if poly:
+        poly.style.polystyle.fill = 0
+        poly.style.linestyle.color = simplekml.Color.red
+        poly.style.linestyle.width = 5
+        html = ''.join([f"<b>{k}:</b> {v}<br>" for k, v in kmz_metadata.items()])
+        poly.description = html
+    kml.savekmz(kmz_path)
 
-       download_kmz_url = url_for("download_kmz", filename=kmz_filename, _external=True)
-
-       return jsonify({
-           "owner": owner,
-           "address": address_full,
-           "legal_description": legal,
-           "subdivision": subdivision,
-           "block": block,
-           "lot_reserve": lot,
-           "deed": deed,
-           "called_acreage": acres,
-           "market_value": market_val,
-           "quickrefid": quickrefid,
-           "parcel_id": parcel_id,
-           "parcel_size_acres": round(area_acres, 2),
-           "perimeter_ft": round(perimeter_ft, 2),
-           "maps_link": maps_url,
-           "kmz_download_url": download_kmz_url
-       })
-
-
-@app.route("/download_kmz")
-def download_kmz():
-    filename = request.args.get("filename")
-    if not filename:
-        return "Missing filename.", 400
-
-    kmz_path = os.path.join("/tmp", filename)
-    if not os.path.exists(kmz_path):
-        return "KMZ not found.", 404
-
-    return send_file(kmz_path, as_attachment=True, download_name=filename)
+    download_kmz_url = url_for("download_kmz", filename=kmz_filename, _external=True)
 
     return jsonify({
         "owner": owner,
@@ -249,15 +215,15 @@ def download_kmz():
 
 @app.route("/download_kmz")
 def download_kmz():
-    address = request.args.get("address")
-    county = request.args.get("county", "fortbend").lower()
-    quickref = request.args.get("quickref")
+    filename = request.args.get("filename")
+    if not filename:
+        return "Missing filename.", 400
 
-    temp_kmz_path = "/tmp/parcel.kmz"
-    if not os.path.exists(temp_kmz_path):
-        return "KMZ not found. Please run an estimate first.", 404
+    kmz_path = os.path.join("/tmp", filename)
+    if not os.path.exists(kmz_path):
+        return "KMZ not found.", 404
 
-    return send_file(temp_kmz_path, as_attachment=True, download_name="parcel.kmz")
+    return send_file(kmz_path, as_attachment=True, download_name=filename)
 
 @app.route("/openapi.json")
 def openapi_spec():
