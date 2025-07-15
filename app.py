@@ -185,6 +185,83 @@ def estimate():
         "kmz": kmz_bytes.hex()
     })
 
+@app.route("/openapi.json")
+def openapi_spec():
+    return jsonify({
+        "openapi": "3.0.0",
+        "info": {
+            "title": "Tejas Estimator API",
+            "version": "1.0.0",
+            "description": "Retrieve parcel estimate details based on address or Quick Ref ID in Fort Bend County."
+        },
+        "servers": [
+            { "url": "https://tejas-estimator-api.onrender.com" }
+        ],
+        "paths": {
+            "/estimate": {
+                "get": {
+                    "operationId": "get_survey_estimate",
+                    "summary": "Get survey estimate",
+                    "parameters": [
+                        {
+                            "name": "address",
+                            "in": "query",
+                            "required": False,
+                            "schema": { "type": "string" },
+                            "description": "The property address to estimate."
+                        },
+                        {
+                            "name": "quickref",
+                            "in": "query",
+                            "required": False,
+                            "schema": { "type": "string" },
+                            "description": "The Quick Ref ID to search."
+                        },
+                        {
+                            "name": "county",
+                            "in": "query",
+                            "required": True,
+                            "schema": {
+                                "type": "string",
+                                "enum": ["fortbend"]
+                            },
+                            "description": "The county to search in (currently only 'fortbend' is supported)."
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Successful response",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "owner": { "type": "string" },
+                                            "address": { "type": "string" },
+                                            "legal_description": { "type": "string" },
+                                            "subdivision": { "type": "string" },
+                                            "block": { "type": "string" },
+                                            "lot_reserve": { "type": "string" },
+                                            "deed": { "type": "string" },
+                                            "called_acreage": { "type": "string" },
+                                            "market_value": { "type": "string" },
+                                            "quickrefid": { "type": "string" },
+                                            "parcel_id": { "type": "string" },
+                                            "parcel_size_acres": { "type": "number" },
+                                            "perimeter_ft": { "type": "number" },
+                                            "maps_link": { "type": "string" },
+                                            "kmz": { "type": "string" }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    })
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
