@@ -69,9 +69,10 @@ def query_parcels(endpoint, where_clause):
 def estimate():
     address = request.args.get("address")
     county = request.args.get("county", "fortbend").lower()
+    quickref = request.args.get("quickref")
 
-    if not address:
-        return jsonify({"error": "Missing address"}), 400
+    if not (address or quickref):
+        return jsonify({"error": "Missing address or quickref"}), 400
 
     if county not in COUNTY_CONFIG:
         return jsonify({"error": f"Unsupported county: {county}"}), 400
@@ -80,23 +81,30 @@ def estimate():
     endpoint = config["endpoint"]
     fields = config["fields"]
 
-    number, name, st_type = parse_address_loose(address)
-    if not name:
-        return jsonify({"error": "Invalid address format"}), 400
+    matches = []
 
-    clauses = []
-    if number and st_type:
-        clauses.append(f"{fields['street_num']} = '{number}' AND UPPER({fields['street_name']}) LIKE '%{name.upper()}%' AND UPPER({fields['street_type']}) = '{st_type.upper()}'")
-    if number:
-        clauses.append(f"{fields['street_num']} = '{number}' AND UPPER({fields['street_name']}) LIKE '%{name.upper()}%'")
-    clauses.append(f"UPPER({fields['street_name']}) LIKE '%{name.upper()}%'")
+    if quickref:
+        where_clause = f"{fields['quickrefid']} = '{quickref}'"
+        matches = query_parcels(endpoint, where_clause)
+    elif address:
+        number, name, st_type = parse_address_loose(address)
+        if not name:
+            return jsonify({"error": "Invalid address format"}), 400
 
-    for clause in clauses:
-        matches = query_parcels(endpoint, clause)
-        if matches:
-            break
-    else:
-        return jsonify({"error": "No parcels found"}), 404
+        clauses = []
+        if number and st_type:
+            clauses.append(f"{fields['street_num']} = '{number}' AND UPPER({fields['street_name']}) LIKE '%{name.upper()}%' AND UPPER({fields['street_type']}) = '{st_type.upper()}'")
+        if number:
+            clauses.append(f"{fields['street_num']} = '{number}' AND UPPER({fields['street_name']}) LIKE '%{name.upper()}%'")
+        clauses.append(f"UPPER({fields['street_name']}) LIKE '%{name.upper()}%'")
+
+        for clause in clauses:
+            matches = query_parcels(endpoint, clause)
+            if matches:
+                break
+
+    if not matches:
+        return jsonify({"error": "No parcels found. Please check the address spelling or try providing a Quick Ref ID."}), 404
 
     feature = matches[0]
     props = feature["properties"]
@@ -146,7 +154,7 @@ def openapi_spec():
                         {
                             "name": "address",
                             "in": "query",
-                            "required": True,
+                            "required": False,
                             "schema": { "type": "string" },
                             "description": "The full address to search."
                         },
@@ -159,6 +167,13 @@ def openapi_spec():
                                 "enum": ["fortbend", "harris"]
                             },
                             "description": "The county to search in."
+                        },
+                        {
+                            "name": "quickref",
+                            "in": "query",
+                            "required": False,
+                            "schema": { "type": "string" },
+                            "description": "Quick Ref ID for exact parcel lookup."
                         }
                     ],
                     "responses": {
