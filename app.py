@@ -4,6 +4,7 @@ from shapely.geometry import shape
 from shapely.ops import transform
 import pyproj
 import re
+import os
 
 app = Flask(__name__)
 
@@ -186,8 +187,6 @@ def openapi_spec():
             }
         }
     })
-
-import os
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
