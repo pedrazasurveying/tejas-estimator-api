@@ -223,9 +223,9 @@ def openapi_spec():
                             "required": True,
                             "schema": {
                                 "type": "string",
-                                "enum": ["fortbend"]
+                                "enum": ["fortbend", "harris"]
                             },
-                            "description": "The county to search in (currently only 'fortbend' is supported)."
+                            "description": "The county to search in."
                         }
                     ],
                     "responses": {
