@@ -177,11 +177,57 @@ def estimate():
         "Perimeter (ft)": f"{perimeter_ft:.2f}"
     }
 
-    kmz_path = generate_kmz(geom, metadata=kmz_metadata)
-    with open(kmz_path, "rb") as f:
-        kmz_bytes = f.read()
+       kmz_filename = f"parcel_{quickrefid or parcel_id or 'default'}.kmz"
+       kmz_path = os.path.join("/tmp", kmz_filename)
+       kml = simplekml.Kml()
+       poly = None
+       if geom.geom_type == "Polygon":
+           coords = [(x, y) for x, y in list(geom.exterior.coords)]
+           poly = kml.newpolygon(name="Parcel", outerboundaryis=coords)
+       elif geom.geom_type == "MultiPolygon":
+           for poly_geom in geom.geoms:
+               coords = [(x, y) for x, y in list(poly_geom.exterior.coords)]
+               poly = kml.newpolygon(name="Parcel Part", outerboundaryis=coords)
+       if poly:
+           poly.style.polystyle.fill = 0
+           poly.style.linestyle.color = simplekml.Color.red
+           poly.style.linestyle.width = 5
+           html = ''.join([f"<b>{k}:</b> {v}<br>" for k, v in kmz_metadata.items()])
+           poly.description = html
+       kml.savekmz(kmz_path)
 
-    download_kmz_url = url_for("download_kmz", address=address or "", quickref=quickref or "", county=county, _external=True)
+       download_kmz_url = url_for("download_kmz", filename=kmz_filename, _external=True)
+
+       return jsonify({
+           "owner": owner,
+           "address": address_full,
+           "legal_description": legal,
+           "subdivision": subdivision,
+           "block": block,
+           "lot_reserve": lot,
+           "deed": deed,
+           "called_acreage": acres,
+           "market_value": market_val,
+           "quickrefid": quickrefid,
+           "parcel_id": parcel_id,
+           "parcel_size_acres": round(area_acres, 2),
+           "perimeter_ft": round(perimeter_ft, 2),
+           "maps_link": maps_url,
+           "kmz_download_url": download_kmz_url
+       })
+
+
+@app.route("/download_kmz")
+def download_kmz():
+    filename = request.args.get("filename")
+    if not filename:
+        return "Missing filename.", 400
+
+    kmz_path = os.path.join("/tmp", filename)
+    if not os.path.exists(kmz_path):
+        return "KMZ not found.", 404
+
+    return send_file(kmz_path, as_attachment=True, download_name=filename)
 
     return jsonify({
         "owner": owner,
