@@ -126,3 +126,66 @@ def estimate():
 
 if __name__ == "__main__":
     app.run(debug=True)
+
+@app.route("/openapi.json")
+def openapi_spec():
+    return jsonify({
+        "openapi": "3.0.0",
+        "info": {
+            "title": "Tejas Estimator API",
+            "version": "1.0.0",
+            "description": "Retrieve parcel estimate details based on address and county."
+        },
+        "servers": [
+            { "url": "https://tejas-estimator-api.onrender.com" }
+        ],
+        "paths": {
+            "/estimate": {
+                "get": {
+                    "operationId": "get_survey_estimate",
+                    "summary": "Get survey estimate",
+                    "parameters": [
+                        {
+                            "name": "address",
+                            "in": "query",
+                            "required": True,
+                            "schema": { "type": "string" },
+                            "description": "The full address to search."
+                        },
+                        {
+                            "name": "county",
+                            "in": "query",
+                            "required": True,
+                            "schema": {
+                                "type": "string",
+                                "enum": ["fortbend", "harris"]
+                            },
+                            "description": "The county to search in."
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Successful response",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "owner": { "type": "string" },
+                                            "address": { "type": "string" },
+                                            "legal_description": { "type": "string" },
+                                            "deed": { "type": "string" },
+                                            "called_acreage": { "type": "string" },
+                                            "market_value": { "type": "string" },
+                                            "parcel_size_acres": { "type": "number" },
+                                            "perimeter_ft": { "type": "number" }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    })
