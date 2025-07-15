@@ -216,7 +216,7 @@ def download_kmz():
 @app.route("/openapi.json")
 def openapi_spec():
     return jsonify({
-        "openapi": "3.0.0",
+        "openapi": "3.1.0",
         "info": {
             "title": "Tejas Estimator API",
             "version": "1.0.0",
